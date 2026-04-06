@@ -1,0 +1,2148 @@
+================================================================================
+              PROMPT MAESTRO — API REST CON FASTAPI
+              Sistema de Entrega de Alimentos (Food Delivery)
+              Guía Completa de Arquitectura, Desarrollo y Despliegue
+              con Mejores Prácticas de la Industria
+              Versión 1.0 — Abril 2026
+================================================================================
+
+
+ÍNDICE DE CONTENIDOS
+====================
+
+ 1. Introducción y Contexto
+ 2. Requisitos y Stack Tecnológico
+ 3. Arquitectura y Estructura del Proyecto
+ 4. Configuración Base del Proyecto
+ 5. Modelos de Base de Datos
+ 6. Esquemas Pydantic (DTOs)
+ 7. Endpoints de la API
+ 8. Autenticación y Autorización
+ 9. Lógica de Negocio (Capa de Servicios)
+ 10. Manejo de Errores y Excepciones
+ 11. Middleware y Monitoreo
+ 12. Estrategia de Testing
+ 13. Migraciones de Base de Datos con Alembic
+ 14. Documentación de la API
+ 15. Despliegue y DevOps
+ 16. Buenas Prácticas Adicionales
+ 17. Resumen del Prompt Maestro
+
+
+================================================================================
+1. INTRODUCCIÓN Y CONTEXTO
+================================================================================
+
+El presente documento constituye un prompt maestro exhaustivo para la
+construcción de una API REST utilizando el framework FastAPI en Python,
+orientada específicamente al dominio de un sistema de entrega de alimentos
+(food delivery). Este prompt está diseñado para ser utilizado como guía de
+referencia completa por equipos de desarrollo, arquitectos de software e
+ingenieros backend que deseen implementar una solution robusta, escalable y
+alineada con las mejores prácticas de la industria.
+
+El sistema contempla los siguientes módulos funcionales principales:
+
+  • Arquitectura limpia y modular basada en capas (routes, services,
+    repositories, models).
+  • Autenticación y autorización con JWT y OAuth2, incluyendo roles granulares
+    (admin, restaurante, repartidor, cliente).
+  • Validación estricta de datos con Pydantic v2, incluyendo esquemas de
+    request/response diferenciados.
+  • Integración con base de datos PostgreSQL a través de SQLAlchemy 2.0 con
+    async.
+  • Gestión de transacciones, migraciones con Alembic y pooling de conexiones.
+  • Documentación automática con OpenAPI 3.1 y Swagger UI integrado.
+  • Testing completo: unitario, de integración y end-to-end con pytest.
+  • Despliegue containerizado con Docker y configuración CI/CD con GitHub
+    Actions.
+  • Manejo avanzado de errores, logging estructurado y middleware de
+    monitoreo.
+  • Soporte para tareas en segundo plano (Celery/ARQ), caching (Redis) y
+    websockets para tiempo real.
+
+
+1.1 Objetivo del Prompt
+-----------------------
+
+Este prompt detalla paso a paso la arquitectura, modelos de datos, endpoints,
+validaciones, patrón de diseño, seguridad, testing y despliegue de una API
+REST de nivel producción para un sistema de entrega de alimentos como Uber
+Eats, DoorDash o Rappi. Cada sección incluye código de ejemplo, explicaciones
+detalladas y justificaciones de las decisiones de diseño adoptadas. El
+objetivo es que cualquier equipo de desarrollo pueda tomar este documento como
+base y generar un proyecto completo sin ambigüedades.
+
+
+1.2 Alcance Funcional
+---------------------
+
+El sistema contempla los siguientes módulos funcionales principales, cada uno
+con sus endpoints, lógica de negocio y reglas de validación correspondientes:
+
+  • Autenticación (Auth): Registro, login, refresh token, logout, recuperación
+    de contraseña, verificación de email.
+  • Usuarios (Users): CRUD de perfiles, gestión de roles, direcciones de
+    entrega.
+  • Restaurantes (Restaurants): Registro de restaurantes, gestión de menús,
+    categorías y platos.
+  • Órdenes/Pedidos (Orders): Ciclo completo de vida del pedido, desde la
+    creación hasta la entrega.
+  • Pagos (Payments): Integración con Stripe, procesamiento de pagos y
+    reembolsos.
+  • Entregas (Delivery): Asignación de repartidores, seguimiento GPS en
+    tiempo real.
+  • Reseñas (Reviews): Calificaciones y comentarios de restaurantes y platos.
+
+
+================================================================================
+2. REQUISITOS Y STACK TECNOLÓGICO
+================================================================================
+
+2.1 Requisitos del Sistema
+--------------------------
+
+  • Python 3.11+ (soporte para match-case, type hints mejorados, StrEnum).
+  • FastAPI 0.110+ con soporte para Pydantic v2 y anotaciones de tipo nativas.
+  • PostgreSQL 15+ como motor de base de datos relacional.
+  • Redis 7+ para caching de sesiones, colas de tareas y rate limiting.
+  • Docker y Docker Compose para containerización del entorno completo.
+  • Git y GitHub Actions para control de versiones e integración continua.
+
+
+2.2 Stack Tecnológico Detallado
+-------------------------------
+
++--------------+------------------+----------+----------------------------------------+
+| Componente   | Tecnología      | Versión  | Propósito                              |
++--------------+------------------+----------+----------------------------------------+
+| Framework     | FastAPI          | 0.110+   | Framework web async de alto rendimiento |
+| Lenguaje     | Python           | 3.11+    | Lenguaje principal con type hints       |
+| ORM           | SQLAlchemy       | 2.0+     | ORM async para interacción con BD       |
+| Validación    | Pydantic         | 2.5+     | Validación y serialización de datos     |
+| Base de Datos | PostgreSQL       | 15+      | Almacenamiento persistente relacional   |
+| Migraciones   | Alembic          | 1.13+    | Gestión de migraciones de esquema       |
+| Cache         | Redis            | 7+       | Caching, sesiones y rate limiting       |
+| Autenticación | python-jose      | 3.3+     | Generación y validación JWT             |
+| Passwords     | passlib[bcrypt]  | 1.7+     | Hashing seguro de contraseñas           |
+| Testing       | pytest + httpx   | 7.4+/... | Framework de testing y cliente async    |
+| Tasks         | Celery / ARQ     | 5.3+/... | Tareas en segundo plano                |
+| Docker        | Docker Compose   | 2.24+    | Orquestación de contenedores            |
+| CI/CD         | GitHub Actions   | N/A      | Integración y despliegue continuo       |
+| Logging       | structlog        | 23.2+    | Logging estructurado en JSON            |
++--------------+------------------+----------+----------------------------------------+
+
+Tabla 1: Stack tecnológico completo del proyecto
+
+
+================================================================================
+3. ARQUITECTURA Y ESTRUCTURA DEL PROYECTO
+================================================================================
+
+3.1 Patrón de Arquitectura: Clean Architecture
+-----------------------------------------------
+
+La API se estructura siguiendo los principios de Clean Architecture
+(Arquitectura Limpia) de Robert C. Martin, adaptada para el contexto de una
+API REST con FastAPI. Este patrón separa la aplicación en capas concéntricas
+donde las dependencias apuntan hacia adentro, permitiendo que la lógica de
+negocio sea independiente del framework, la base de datos y cualquier detalle
+de infraestructura. Las capas definidas son las siguientes:
+
+  • Capa de Presentación (Routers/API): Define los endpoints HTTP, recibe
+    requests, delega al servicio correspondiente y retorna respuestas. Utiliza
+    Depends() de FastAPI para inyección de dependencias.
+
+  • Capa de Servicios (Use Cases): Contiene la lógica de negocio, orquesta
+    las operaciones entre repositorios y servicios externos. Cada servicio
+    representa un caso de uso específico del dominio.
+
+  • Capa de Repositorios (Data Access): Abstrae el acceso a datos, encapsula
+    las querys SQL a través de SQLAlchemy. Cada repositorio trabaja con una
+    entidad específica.
+
+  • Capa de Modelos (Domain): Define las entidades del dominio y los modelos
+    de base de datos con SQLAlchemy. Representa la estructura de datos
+    persistente.
+
+  • Capa de Esquemas (DTOs): Define los esquemas Pydantic para validación de
+    entrada y serialización de salida, separando los contratos de la API de
+    los modelos internos.
+
+
+3.2 Estructura de Directorios
+-----------------------------
+
+A continuación se presenta la estructura de directorios recomendada para el
+proyecto, siguiendo las convenciones de Python y las mejores prácticas de
+organización para proyectos FastAPI de nivel empresarial:
+
+  app/
+  ├── __init__.py              # Inicialización del paquete y configuración global
+  ├── main.py                  # Punto de entrada, instancia FastAPI, routers, middleware
+  ├── config.py                # Configuración centralizada con pydantic-settings
+  ├── api/
+  │   ├── __init__.py          # Paquete de la capa API con todos los routers
+  │   └── v1/
+  │       ├── __init__.py      # Versionamiento de la API (v1)
+  │       ├── auth.py          # Endpoints de autenticación
+  │       ├── users.py         # CRUD de usuarios, perfiles, direcciones
+  │       ├── restaurants.py   # Gestión de restaurantes, menús, categorías, platos
+  │       ├── orders.py        # Creación, seguimiento, actualización de pedidos
+  │       ├── payments.py      # Procesamiento de pagos, reembolsos
+  │       ├── delivery.py      # Asignación de repartidores, seguimiento GPS
+  │       └── reviews.py       # Calificaciones y reseñas
+  ├── deps.py                  # Dependencias inyectables (BD, usuario actual, permisos)
+  ├── models/
+  │   ├── __init__.py          # Modelos SQLAlchemy (User, Restaurant, Order, etc.)
+  │   ├── user.py
+  │   ├── restaurant.py
+  │   ├── order.py
+  │   ├── payment.py
+  │   ├── review.py
+  │   └── address.py
+  ├── schemas/
+  │   ├── __init__.py          # Esquemas Pydantic (request/response DTOs)
+  │   ├── auth.py
+  │   ├── user.py
+  │   ├── restaurant.py
+  │   ├── order.py
+  │   ├── payment.py
+  │   └── review.py
+  ├── services/
+  │   ├── __init__.py          # Lógica de negocio
+  │   ├── auth_service.py
+  │   ├── order_service.py
+  │   ├── payment_service.py
+  │   ├── delivery_service.py
+  │   └── review_service.py
+  ├── repositories/
+  │   ├── __init__.py          # Acceso a datos
+  │   ├── base.py
+  │   ├── user_repo.py
+  │   ├── restaurant_repo.py
+  │   ├── order_repo.py
+  │   └── payment_repo.py
+  ├── core/
+  │   ├── __init__.py          # Seguridad, JWT, hashing, excepciones custom
+  │   ├── security.py          # Funciones de JWT y bcrypt
+  │   ├── exceptions.py        # Excepciones custom de la aplicación
+  │   └── config.py            # Configuración de la aplicación
+  ├── middleware/
+  │   ├── __init__.py          # Logging, CORS, rate limiting, timing
+  │   ├── logging.py
+  │   ├── rate_limiter.py
+  │   └── cors.py
+  └── utils/
+      ├── __init__.py          # Utilidades compartidas
+      ├── pagination.py
+      ├── geolocation.py
+      └── formatting.py
+  alembic/                     # Migraciones de base de datos
+  tests/                       # Suite completa de tests
+  ├── unit/
+  ├── integration/
+  └── e2e/
+  docker/                      # Dockerfiles y docker-compose.yml
+  .github/workflows/           # Pipelines de CI/CD con GitHub Actions
+  pyproject.toml               # Dependencias y configuración del proyecto
+  .env.example                 # Template de variables de entorno
+
+Esta estructura promueve la separación de responsabilidades (SoC), facilita el
+testing unitario de cada capa de manera independiente, y permite que nuevos
+desarrolladores comprendan rápidamente la organización del código. Además, el
+versionamiento de la API bajo /api/v1/ garantiza retrocompatibilidad cuando se
+introduzcan cambios breaking en versiones futuras.
+
+
+================================================================================
+4. CONFIGURACIÓN BASE DEL PROYECTO
+================================================================================
+
+4.1 Variables de Entorno y Configuración
+----------------------------------------
+
+La configuración del proyecto se centraliza utilizando pydantic-settings, lo que
+permite validar las variables de entorno en tiempo de inicio y proporciona
+autocompletado y type safety en todo el código. Este patrón elimina la
+necesidad de archivos de configuración dispersos y permite diferentes
+configuraciones para desarrollo, staging y producción mediante archivos .env
+separados. La clase Settings carga automáticamente las variables de entorno y
+las hace disponibles a través de una instancia singleton.
+
+Las variables críticas incluyen: DATABASE_URL para la conexión PostgreSQL,
+REDIS_URL para el cache, SECRET_KEY para la firma de tokens JWT, ALGORITHM para
+el algoritmo de encriptación, ACCESS_TOKEN_EXPIRE_MINUTES para la expiración
+de sesiones, y los credenciales de integración con pasarelas de pago como
+Stripe. Todas las variables sensibles deben documentarse en un archivo
+.env.example sin valores reales.
+
+Ejemplo de implementación (app/core/config.py):
+
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+    from pydantic import Field
+
+    class Settings(BaseSettings):
+        model_config = SettingsConfigDict(
+            env_file=".env",
+            env_file_encoding="utf-8",
+            case_sensitive=False
+        )
+
+        # Application
+        APP_NAME: str = "FoodDelivery API"
+        APP_VERSION: str = "1.0.0"
+        DEBUG: bool = False
+        API_V1_PREFIX: str = "/api/v1"
+
+        # Database
+        DATABASE_URL: str = Field(..., description="PostgreSQL async URL")
+        DB_ECHO: bool = False
+
+        # Redis
+        REDIS_URL: str = Field(..., description="Redis URL")
+
+        # JWT
+        SECRET_KEY: str = Field(..., min_length=32)
+        ALGORITHM: str = "HS256"
+        ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+        REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+        # Stripe
+        STRIPE_SECRET_KEY: str | None = None
+        STRIPE_WEBHOOK_SECRET: str | None = None
+
+        # CORS
+        BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+        # Rate Limiting
+        RATE_LIMIT_LOGIN: int = 5
+        RATE_LIMIT_GENERAL: int = 100
+
+    settings = Settings()
+
+
+4.2 Instancia de la Aplicación FastAPI
+---------------------------------------
+
+La aplicación FastAPI se instancia en app/main.py con metadata descriptiva para
+la documentación OpenAPI automática. Se deben configurar los CORS middleware
+para permitir solicitudes desde los dominios autorizados del frontend, el
+middleware de logging estructurado para trazabilidad de peticiones, y los
+routers versionados que se incluyen bajo el prefijo /api/v1. La aplicación debe
+también registrar los manejadores de excepciones globales para errores HTTP y
+excepciones custom de la aplicación.
+
+Ejemplo de implementación (app/main.py):
+
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from app.core.config import settings
+    from app.api.v1 import auth, users, restaurants, orders, payments, reviews
+    from app.middleware.logging import RequestLoggingMiddleware
+    from app.core.exceptions import register_exception_handlers
+
+    def create_app() -> FastAPI:
+        app = FastAPI(
+            title=settings.APP_NAME,
+            description="API REST para sistema de entrega de alimentos",
+            version=settings.APP_VERSION,
+            docs_url="/docs",
+            redoc_url="/redoc",
+            openapi_url="/openapi.json"
+        )
+
+        # CORS
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.BACKEND_CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"]
+        )
+
+        # Logging middleware
+        app.add_middleware(RequestLoggingMiddleware)
+
+        # Exception handlers
+        register_exception_handlers(app)
+
+        # Routers v1
+        app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+        app.include_router(users.router, prefix=settings.API_V1_PREFIX)
+        app.include_router(restaurants.router, prefix=settings.API_V1_PREFIX)
+        app.include_router(orders.router, prefix=settings.API_V1_PREFIX)
+        app.include_router(payments.router, prefix=settings.API_V1_PREFIX)
+        app.include_router(reviews.router, prefix=settings.API_V1_PREFIX)
+
+        # Health check
+        @app.get("/health", tags=["Health"])
+        async def health_check():
+            return {"status": "ok", "version": settings.APP_VERSION}
+
+        return app
+
+    app = create_app()
+
+
+4.3 Archivo pyproject.toml y Dependencias
+------------------------------------------
+
+El proyecto utiliza pyproject.toml como archivo de configuración principal,
+definiendo todas las dependencias del proyecto con versiones exactas para
+garantizar reproducibilidad. Se deben crear grupos de dependencias separados:
+
+Dependencias de producción:
+  fastapi>=0.110.0, uvicorn[standard]>=0.27.0, sqlalchemy[asyncio]>=2.0.25,
+  asyncpg>=0.29.0, pydantic-settings>=2.1.0, redis>=5.0.0,
+  python-jose[cryptography]>=3.3.0, passlib[bcrypt]>=1.7.4,
+  alembic>=1.13.0, structlog>=23.2.0, celery[redis]>=5.3.0,
+  stripe>=8.2.0, python-multipart>=0.0.6, websockets>=12.0
+
+Dependencias de desarrollo:
+  pytest>=7.4.0, pytest-asyncio>=0.23.0, httpx>=0.27.0,
+  factory-boy>=3.3.0, faker>=22.0.0, coverage>=7.4.0,
+  ruff>=0.2.0, mypy>=1.8.0, pre-commit>=3.6.0
+
+Dependencias opcionales:
+  [email] = aiosmtplib>=3.0.0, jinja2>=3.1.0
+  [geo] = geopy>=2.4.0, shapely>=2.0.0
+
+
+================================================================================
+5. MODELOS DE BASE DE DATOS
+================================================================================
+
+5.1 Configuración de la Base de Datos
+--------------------------------------
+
+La conexión a la base de datos PostgreSQL se realiza de manera asíncrona
+utilizando SQLAlchemy 2.0 con el driver asyncpg. Se configura un engine
+asíncrono con parámetros optimizados de pool de conexiones (pool_size=20,
+max_overflow=10, pool_timeout=30, pool_recycle=1800). La sesión asíncrona se
+gestiona a través de una factory function (async_session_maker) que genera
+nuevas sesiones bajo demanda, y se inyecta en los endpoints mediante el
+sistema de dependencias de FastAPI con el patrón async context manager.
+
+Ejemplo de implementación (app/core/database.py):
+
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.orm import DeclarativeBase
+    from app.core.config import settings
+
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DB_ECHO,
+        pool_size=20,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800
+    )
+
+    AsyncSessionLocal = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    class Base(DeclarativeBase):
+        pass
+
+    async def get_db() -> AsyncSession:
+        async with AsyncSessionLocal() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+
+5.2 Modelo Base Abstracto
+--------------------------
+
+Todos los modelos del proyecto heredan de una clase base abstracta (Base) que
+proporciona campos comunes como id (UUID primario generado con uuid4),
+created_at (timestamp de creación) y updated_at (timestamp de última
+actualización). El uso de UUID como identificador primario en lugar de integers
+secuenciales ofrece ventajas significativas de seguridad al evitar enumeración
+de recursos, facilita la generación de IDs distribuidos en entornos de
+microservicios, y elimina el riesgo de colisiones entre registros de
+diferentes ambientes. Los timestamps se implementan con server_default=func.now()
+para que la base de datos genere el valor, y onupdate=func.now() para
+actualización automática.
+
+    from sqlalchemy import Column, DateTime, func
+    from sqlalchemy.dialects.postgresql import UUID
+    import uuid
+
+    class BaseModel(Base):
+        __abstract__ = True
+
+        id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+        created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+        updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+5.3 Definición de Entidades
+----------------------------
+
+El esquema de la base de datos se compone de las siguientes entidades
+principales, cada una con sus atributos, relaciones y restricciones:
+
+
+5.3.1 User (Usuario)
+---------------------
+
++------------------+---------------+------------------------------------+----------------------------------+
+| Campo            | Tipo          | Restricciones                      | Descripción                      |
++------------------+---------------+------------------------------------+----------------------------------+
+| id               | UUID          | PK, default=uuid4                  | Identificador único del usuario  |
+| email            | String(255)   | Unique, Not Null, Indexed          | Correo electrónico               |
+| full_name        | String(150)   | Not Null                           | Nombre completo del usuario      |
+| phone            | String(20)    | Unique, Not Null                   | Número de teléfono verificado    |
+| hashed_password  | String(255)   | Not Null                           | Contraseña hasheada con bcrypt   |
+| role             | Enum(UserRole)| Not Null, Default=CLIENT           | ADMIN, RESTAURANT, RIDER, CLIENT |
+| is_active        | Boolean       | Default=True                       | Si el usuario está activo        |
+| is_verified      | Boolean       | Default=False                      | Si el email ha sido verificado   |
+| avatar_url       | String(500)   | Nullable                           | URL de la foto de perfil         |
+| created_at       | DateTime      | Server Default=now()               | Fecha de registro                |
+| updated_at       | DateTime      | On Update=now()                    | Última modificación              |
++------------------+---------------+------------------------------------+----------------------------------+
+
+Tabla 2: Estructura del modelo User
+
+Enum UserRole: ADMIN, RESTAURANT, RIDER, CLIENT
+
+Relaciones: User -> Address (one-to-many), User -> Order (one-to-many como
+cliente), User -> Order (one-to-many como repartidor), User -> Review
+(one-to-many), User -> Restaurant (one-to-many como owner).
+
+
+5.3.2 Address (Dirección de Entrega)
+-------------------------------------
+
++-------------+-------------+---------------------------------+----------------------------------+
+| Campo       | Tipo        | Restricciones                   | Descripción                      |
++-------------+-------------+---------------------------------+----------------------------------+
+| id          | UUID        | PK, default=uuid4               | Identificador único              |
+| user_id     | UUID        | FK -> users.id, Not Null        | Usuario propietario              |
+| street      | String(300) | Not Null                        | Calle y número                   |
+| city        | String(100) | Not Null                        | Ciudad                           |
+| state       | String(100) | Not Null                        | Estado/departamento              |
+| zip_code    | String(20)  | Not Null                        | Código postal                    |
+| latitude    | Float       | Nullable                        | Latitud para geolocalización     |
+| longitude   | Float       | Nullable                        | Longitud para geolocalización    |
+| is_default  | Boolean     | Default=False                   | Dirección principal              |
+| label       | String(50)  | Nullable                        | Etiqueta: Casa, Oficina, Otro    |
++-------------+-------------+---------------------------------+----------------------------------+
+
+Tabla 3: Estructura del modelo Address
+
+
+5.3.3 Restaurant (Restaurante)
+-------------------------------
+
++--------------------+---------------+-----------------------------------+---------------------------------+
+| Campo              | Tipo          | Restricciones                     | Descripción                     |
++--------------------+---------------+-----------------------------------+---------------------------------+
+| id                 | UUID          | PK, default=uuid4                 | Identificador único             |
+| owner_id           | UUID          | FK -> users.id, Not Null          | Propietario del restaurante     |
+| name               | String(200)   | Not Null, Indexed                 | Nombre comercial                |
+| description        | Text          | Nullable                          | Descripción detallada           |
+| cuisine_type       | String(100)   | Not Null, Indexed                 | Tipo de cocina                  |
+| address            | String(300)   | Not Null                          | Dirección física                |
+| latitude           | Float         | Not Null                          | Latitud para búsqueda           |
+| longitude          | Float         | Not Null                          | Longitud para búsqueda          |
+| phone              | String(20)    | Not Null                          | Teléfono de contacto            |
+| email              | String(255)   | Not Null                          | Email de contacto               |
+| logo_url           | String(500)   | Nullable                          | URL del logo                    |
+| cover_image_url    | String(500)   | Nullable                          | URL de la imagen de portada     |
+| opening_time       | Time          | Not Null                          | Hora de apertura                |
+| closing_time       | Time          | Not Null                          | Hora de cierre                  |
+| min_order_amount   | Decimal(10,2) | Default=0.00                      | Monto mínimo del pedido         |
+| delivery_fee       | Decimal(10,2) | Default=0.00                      | Tarifa de entrega base          |
+| delivery_radius_km | Float         | Default=5.0                       | Radio máximo de entrega (km)    |
+| rating_avg         | Float         | Default=0.0                       | Promedio de calificaciones      |
+| is_active          | Boolean       | Default=True                      | Si acepta pedidos               |
+| created_at         | DateTime      | Server Default=now()              | Fecha de registro               |
++--------------------+---------------+-----------------------------------+---------------------------------+
+
+Tabla 4: Estructura del modelo Restaurant
+
+
+5.3.4 Category (Categoría) y MenuItem (Plato)
+----------------------------------------------
+
+El modelo Category representa las categorías del menú de un restaurante
+(por ejemplo: Entradas, Platos Fuertes, Postres, Bebidas). Cada categoría
+pertenece a un restaurante específico mediante una relación many-to-one con
+Restaurant, tiene un nombre obligatorio, un campo de orden para controlar la
+disposición visual en el menú, una descripción opcional y una URL de imagen
+opcional. El modelo MenuItem representa cada plato individual dentro de una
+categoría, con campos como nombre, descripción detallada, precio base, URL de
+imagen, disponibilidad, opciones personalizables (talla, ingredientes extra),
+e indicadores de alérgenos y valor nutricional.
+
++------------------------+---------------+---------------------------+------------------------------+
+| Campo                  | Tipo          | Restricciones             | Descripción                  |
++------------------------+---------------+---------------------------+------------------------------+
+| id                     | UUID          | PK                        | Identificador único          |
+| restaurant_id          | UUID          | FK -> restaurants.id      | Restaurante al que pertenece |
+| category_id            | UUID          | FK -> categories.id       | Categoría del menú           |
+| name                   | String(200)   | Not Null                  | Nombre del plato             |
+| description            | Text          | Nullable                  | Descripción del plato        |
+| price                  | Decimal(10,2) | Not Null                  | Precio base del plato        |
+| image_url              | String(500)   | Nullable                  | URL de la imagen             |
+| is_available           | Boolean       | Default=True              | Si está disponible para pedir |
+| preparation_time_min   | Integer       | Default=15                | Tiempo est. preparación (min)|
+| calories               | Integer       | Nullable                  | Calorías aproximadas         |
+| is_vegan               | Boolean       | Default=False             | Si es vegano                 |
+| is_gluten_free         | Boolean       | Default=False             | Sin gluten                   |
+| created_at             | DateTime      | Server Default=now()      | Fecha de creación            |
++------------------------+---------------+---------------------------+------------------------------+
+
+Tabla 5: Estructura del modelo MenuItem
+
+
+5.3.5 Order (Pedido) y OrderItem (Item del Pedido)
+---------------------------------------------------
+
+El modelo Order es la entidad central del flujo de negocio. Representa un
+pedido completo realizado por un cliente a un restaurante, e incluye toda la
+información necesaria para su procesamiento, seguimiento y facturación. El
+ciclo de vida de un pedido sigue un flujo de estados definido por un enum
+OrderStatus: PENDING (recién creado), CONFIRMED (aceptado por el restaurante),
+PREPARING (en preparación), READY_FOR_PICKUP (listo para recoger), IN_TRANSIT
+(en camino), DELIVERED (entregado), CANCELLED (cancelado) y REFUNDED
+(reembolsado). Cada transición de estado se registra con timestamps específicos
+y el usuario responsable del cambio.
+
++--------------------+---------------+-----------------------------------+---------------------------------+
+| Campo              | Tipo          | Restricciones                     | Descripción                     |
++--------------------+---------------+-----------------------------------+---------------------------------+
+| id                 | UUID          | PK                                | Identificador único             |
+| order_number       | String(20)    | Unique, Indexed                   | Número legible (ORD-2024-0001)  |
+| user_id            | UUID          | FK -> users.id                    | Cliente que realizó el pedido   |
+| restaurant_id      | UUID          | FK -> restaurants.id              | Restaurante destino             |
+| rider_id           | UUID          | FK -> users.id, Nullable          | Repartidor asignado             |
+| status             | Enum(OrderSta)| Not Null, Default=PENDING         | Estado actual del pedido        |
+| subtotal           | Decimal(10,2) | Not Null                          | Subtotal antes de impuestos     |
+| tax_amount         | Decimal(10,2) | Not Null                          | Monto de impuestos              |
+| delivery_fee       | Decimal(10,2) | Not Null                          | Tarifa de entrega               |
+| total_amount       | Decimal(10,2) | Not Null                          | Monto total a pagar             |
+| delivery_address   | String(500)   | Not Null                          | Dirección de entrega completa   |
+| delivery_lat       | Float         | Nullable                          | Latitud de entrega              |
+| delivery_lng       | Float         | Nullable                          | Longitud de entrega             |
+| notes              | Text          | Nullable                          | Notas especiales del cliente    |
+| estimated_delivery | DateTime      | Nullable                          | Hora estimada de entrega       |
+| delivered_at       | DateTime      | Nullable                          | Hora real de entrega            |
+| created_at         | DateTime      | Server Default=now()              | Fecha de creación               |
++--------------------+---------------+-----------------------------------+---------------------------------+
+
+Tabla 6: Estructura del modelo Order
+
+Enum OrderStatus: PENDING, CONFIRMED, PREPARING, READY_FOR_PICKUP,
+IN_TRANSIT, DELIVERED, CANCELLED, REFUNDED
+
+OrderItem (tabla intermedia):
++------------------------+---------------+---------------------------+------------------------------+
+| Campo                  | Tipo          | Restricciones             | Descripción                  |
++------------------------+---------------+---------------------------+------------------------------+
+| id                     | UUID          | PK                        | Identificador único          |
+| order_id               | UUID          | FK -> orders.id           | Pedido al que pertenece      |
+| menu_item_id           | UUID          | FK -> menu_items.id       | Plato del menú               |
+| quantity               | Integer       | Not Null, min=1           | Cantidad solicitada          |
+| unit_price             | Decimal(10,2) | Not Null                  | Precio unitario al momento   |
+| special_instructions   | Text          | Nullable                  | Instrucciones especiales     |
++------------------------+---------------+---------------------------+------------------------------+
+
+
+5.3.6 Payment (Pago)
+---------------------
+
++-------------------+---------------+-----------------------------------+---------------------------------+
+| Campo             | Tipo          | Restricciones                     | Descripción                     |
++-------------------+---------------+-----------------------------------+---------------------------------+
+| id                | UUID          | PK                                | Identificador único             |
+| order_id          | UUID          | FK -> orders.id, Unique           | Pedido asociado                 |
+| amount            | Decimal(10,2) | Not Null                          | Monto total del pago            |
+| method            | Enum(PayMethod)| Not Null                         | CARD, CASH, WALLET              |
+| status            | Enum(PayStatus)| Not Null                         | PENDING, COMPLETED, FAILED, REF|
+| stripe_payment_id | String(255)   | Nullable                          | ID de pago en Stripe            |
+| transaction_date  | DateTime      | Server Default=now()              | Fecha de la transacción         |
+| failure_reason    | String(500)   | Nullable                          | Razón del fallo si aplica       |
++-------------------+---------------+-----------------------------------+---------------------------------+
+
+Tabla 7: Estructura del modelo Payment
+
+
+5.3.7 Review (Reseña)
+-----------------------
+
++---------------+-------------+---------------------------------+----------------------------------+
+| Campo         | Tipo        | Restricciones                   | Descripción                      |
++---------------+-------------+---------------------------------+----------------------------------+
+| id            | UUID        | PK                              | Identificador único              |
+| user_id       | UUID        | FK -> users.id                  | Cliente que escribe la reseña   |
+| order_id      | UUID        | FK -> orders.id                 | Pedido asociado                  |
+| restaurant_id | UUID        | FK -> restaurants.id            | Restaurante calificado           |
+| rating        | Integer     | Not Null, 1-5                   | Calificación numérica            |
+| comment       | Text        | Nullable                        | Comentario del cliente           |
+| created_at    | DateTime    | Server Default=now()            | Fecha de la reseña               |
++---------------+-------------+---------------------------------+----------------------------------+
+
+Tabla 8: Estructura del modelo Review
+
+
+================================================================================
+6. ESQUEMAS PYDANTIC (DTOs)
+================================================================================
+
+6.1 Filosofía de Diseño de los Esquemas
+----------------------------------------
+
+Los esquemas Pydantic constituyen el contrato formal de la API. Se definen de
+manera diferenciada para cada operación (Create, Update, Response) siguiendo el
+principio de separación de concerns. Los esquemas de entrada (Request)
+validan los datos recibidos del cliente, incluyendo restricciones de tipo,
+longitud, rangos y formatos. Los esquemas de salida (Response) controlan
+exactamente qué información se expone al cliente, evitando filtrar datos
+sensibles como hashed_password o campos internos. Los esquemas de actualización
+(Update) heredan de los de creación pero marcan todos los campos como
+opcionales con Optional, permitiendo actualizaciones parciales mediante el
+patrón PATCH.
+
+
+6.2 Esquemas de Autenticación
+------------------------------
+
+Los esquemas de autenticación definen los contratos para registro, login,
+refresh de tokens y cambio de credenciales. El esquema UserCreate requiere
+email validado por regex, contraseña con requisitos de complejidad (mínimo 8
+caracteres, al menos una mayúscula, una minúscula, un número y un carácter
+especial), nombre completo y número de teléfono. El esquema UserLogin valida
+email y contraseña. El TokenResponse devuelve access_token, refresh_token,
+token_type (bearer) y expires_in.
+
+Ejemplo (app/schemas/auth.py):
+
+    from pydantic import BaseModel, EmailStr, Field, ConfigDict
+    from datetime import datetime
+
+    class UserCreate(BaseModel):
+        email: EmailStr
+        full_name: str = Field(min_length=2, max_length=150)
+        phone: str = Field(min_length=10, max_length=20)
+        password: str = Field(min_length=8, max_length=128)
+        role: str = "CLIENT"
+
+    class UserLogin(BaseModel):
+        email: EmailStr
+        password: str
+
+    class TokenResponse(BaseModel):
+        access_token: str
+        refresh_token: str
+        token_type: str = "bearer"
+        expires_in: int
+
+    class RefreshTokenRequest(BaseModel):
+        refresh_token: str
+
+    class UserResponse(BaseModel):
+        model_config = ConfigDict(from_attributes=True)
+        id: str
+        email: str
+        full_name: str
+        phone: str
+        role: str
+        is_active: bool
+        is_verified: bool
+        avatar_url: str | None = None
+        created_at: datetime
+
+
+6.3 Esquemas de Restaurantes y Menú
+------------------------------------
+
+Los esquemas de restaurante incluyen RestaurantCreate (todos los campos
+requeridos para la creación), RestaurantUpdate (todos los campos opcionales
+para actualizaciones parciales), RestaurantResponse (datos completos incluyendo
+rating promedio y estado) y RestaurantListResponse (versión resumida para
+listados con paginación). Para el menú, MenuItemCreate valida el precio como
+número positivo, el nombre con longitud mínima y máxima, y la categoría
+existente. MenuItemResponse incluye información de precio, disponibilidad,
+tiempo de preparación e indicadores dietarios.
+
+
+6.4 Esquemas de Pedidos
+------------------------
+
+Los esquemas de pedidos son particularmente complejos debido al flujo de
+estados y la composición de items. El esquema OrderCreate contiene una lista
+de OrderItemCreate (menu_item_id, quantity, special_instructions) y la
+dirección de entrega. El servicio de órdenes valida que todos los items
+pertenezcan al mismo restaurante, que estén disponibles, calcula los totales
+(subtotal, impuestos, tarifa de envío) y crea el pedido con estado PENDING.
+El OrderResponse incluye todos los campos del pedido, la lista detallada de
+items con precios unitarios y subtotales, y la información del restaurante y
+repartidor asignado.
+
+Ejemplo (app/schemas/order.py):
+
+    class OrderItemCreate(BaseModel):
+        menu_item_id: str
+        quantity: int = Field(ge=1, le=50)
+        special_instructions: str | None = None
+
+    class OrderCreate(BaseModel):
+        restaurant_id: str
+        items: list[OrderItemCreate] = Field(min_length=1, max_length=50)
+        delivery_address_id: str | None = None
+        delivery_address: str | None = None
+        delivery_lat: float | None = None
+        delivery_lng: float | None = None
+        notes: str | None = None
+        payment_method: str = "CARD"
+
+    class OrderStatus(str, Enum):
+        PENDING = "pending"
+        CONFIRMED = "confirmed"
+        PREPARING = "preparing"
+        READY_FOR_PICKUP = "ready_for_pickup"
+        IN_TRANSIT = "in_transit"
+        DELIVERED = "delivered"
+        CANCELLED = "cancelled"
+        REFUNDED = "refunded"
+
+
+6.5 Esquema de Paginación Genérico
+-----------------------------------
+
+Para mantener la consistencia en todos los endpoints que retornan listas, se
+define un esquema genérico PaginatedResponse[T] que envuelve cualquier lista
+de resultados con metadatos de paginación: items (lista de tipo T), total
+(número total de registros), page (página actual), per_page (registros por
+página) y total_pages (total de páginas). Los parámetros de paginación se
+reciben como query params con valores por defecto (page=1, per_page=20,
+max_per_page=100).
+
+    from typing import Generic, TypeVar
+    from pydantic import BaseModel
+
+    T = TypeVar("T")
+
+    class PaginatedResponse(BaseModel, Generic[T]):
+        items: list[T]
+        total: int
+        page: int
+        per_page: int
+        total_pages: int
+
+
+================================================================================
+7. ENDPOINTS DE LA API
+================================================================================
+
+7.1 Convenciones de Diseño de APIs RESTful
+-------------------------------------------
+
+Todos los endpoints siguen estrictamente las convenciones RESTful para
+garantizar consistencia, previsibilidad y facilidad de consumo por parte de
+los clientes frontend y mobile. Se utilizan sustantivos en plural para los
+recursos (users, restaurants, orders), verbos HTTP semánticos (GET para
+lectura, POST para creación, PUT para reemplazo completo, PATCH para
+actualización parcial, DELETE para eliminación), códigos de estado HTTP
+estándar (200 OK, 201 Created, 204 No Content, 400 Bad Request, 401
+Unauthorized, 403 Forbidden, 404 Not Found, 409 Conflict, 422 Unprocessable
+Entity, 429 Too Many Requests, 500 Internal Server Error), y versionamiento
+de la API mediante prefijo de URL (/api/v1/).
+
+Convenciones de nomenclatura:
+  - Endpoints en plural y minúsculas: /users, /restaurants, /orders
+  - IDs como path parameters: /users/{user_id}
+  - Relaciones como sub-recursos: /restaurants/{id}/menu
+  - Acciones como sub-rutas: /orders/{id}/cancel
+  - Filtros como query parameters: ?status=active&role=client
+
+
+7.2 Endpoints de Autenticación
+-------------------------------
+
++------+-------------------------------+-----------------------------------------+-------------------------+---------------+--------+
+| Método| Endpoint                      | Descripción                             | Request Body            | Response      | Status |
++------+-------------------------------+-----------------------------------------+-------------------------+---------------+--------+
+| POST  | /api/v1/auth/register          | Registrar nuevo usuario                 | UserCreate              | UserResponse  | 201    |
+| POST  | /api/v1/auth/login             | Autenticar y obtener tokens             | OAuth2PasswordRequestForm| TokenResponse | 200    |
+| POST  | /api/v1/auth/refresh           | Renovar token de acceso                 | RefreshTokenRequest     | TokenResponse | 200    |
+| POST  | /api/v1/auth/logout            | Invalidar tokens (blacklist Redis)      | Token                   | MessageResp.  | 200    |
+| POST  | /api/v1/auth/forgot-password   | Solicitar reseteo por email             | EmailRequest            | MessageResp.  | 200    |
+| POST  | /api/v1/auth/reset-password    | Nueva contraseña con token              | ResetPasswordRequest    | MessageResp.  | 200    |
+| GET   | /api/v1/auth/me                | Perfil del usuario autenticado          | N/A (JWT)               | UserResponse  | 200    |
++------+-------------------------------+-----------------------------------------+-------------------------+---------------+--------+
+
+Tabla 9: Endpoints del módulo de autenticación
+
+
+7.3 Endpoints de Usuarios
+--------------------------
+
++------+-------------------------------------------+-------------------------------+-------------------------+------------------------+--------+
+| Método| Endpoint                                  | Descripción                   | Request                 | Response               | Status |
++------+-------------------------------------------+-------------------------------+-------------------------+------------------------+--------+
+| GET   | /api/v1/users/                            | Listar usuarios (solo admin)  | Query: page, per_page    | PaginatedResp[User]     | 200    |
+| GET   | /api/v1/users/{user_id}                   | Detalle de un usuario         | Path: user_id           | UserResponse           | 200    |
+| PATCH | /api/v1/users/{user_id}                   | Actualizar perfil             | UserUpdate              | UserResponse           | 200    |
+| DELETE| /api/v1/users/{user_id}                   | Desactivar (soft delete)      | N/A                     | MessageResp.           | 204    |
+| GET   | /api/v1/users/me/addresses                | Direcciones del usuario       | N/A (JWT)               | List[AddressResp.]     | 200    |
+| POST  | /api/v1/users/me/addresses                | Agregar dirección             | AddressCreate           | AddressResponse        | 201    |
+| PATCH | /api/v1/users/me/addresses/{addr_id}      | Actualizar dirección          | AddressUpdate           | AddressResponse        | 200    |
+| DELETE| /api/v1/users/me/addresses/{addr_id}      | Eliminar dirección            | N/A                     | MessageResp.           | 204    |
++------+-------------------------------------------+-------------------------------+-------------------------+------------------------+--------+
+
+Tabla 10: Endpoints del módulo de usuarios
+
+
+7.4 Endpoints de Restaurantes
+-----------------------------
+
++------+------------------------------------------------------+-----------------------------------+-------------------------+-----------------------------+--------+
+| Método| Endpoint                                             | Descripción                       | Request                 | Response                    | Status |
++------+------------------------------------------------------+-----------------------------------+-------------------------+-----------------------------+--------+
+| GET   | /api/v1/restaurants/                                 | Listar con filtros y paginación   | Query: page, cuisine... | PaginatedResp[RestList]     | 200    |
+| GET   | /api/v1/restaurants/{rest_id}                        | Detalle completo                  | Path: rest_id           | RestaurantResponse          | 200    |
+| POST  | /api/v1/restaurants/                                 | Registrar restaurante             | RestaurantCreate        | RestaurantResponse          | 201    |
+| PATCH | /api/v1/restaurants/{rest_id}                        | Actualizar restaurante            | RestaurantUpdate        | RestaurantResponse          | 200    |
+| DELETE| /api/v1/restaurants/{rest_id}                        | Desactivar (soft delete)          | N/A                     | MessageResp.                | 204    |
+| GET   | /api/v1/restaurants/{rest_id}/menu                   | Menú completo con categorías      | N/A                     | List[CategoryWithItems]     | 200    |
+| POST  | /api/v1/restaurants/{rest_id}/categories            | Crear categoría                  | CategoryCreate          | CategoryResponse            | 201    |
+| POST  | /api/v1/restaurants/{rest_id}/items                  | Agregar plato                    | MenuItemCreate          | MenuItemResponse            | 201    |
+| PATCH | /api/v1/restaurants/{rest_id}/items/{item_id}        | Actualizar plato                 | MenuItemUpdate          | MenuItemResponse            | 200    |
+| DELETE| /api/v1/restaurants/{rest_id}/items/{item_id}        | Eliminar plato                   | N/A                     | MessageResp.                | 204    |
++------+------------------------------------------------------+-----------------------------------+-------------------------+-----------------------------+--------+
+
+Tabla 11: Endpoints del módulo de restaurantes
+
+
+7.5 Endpoints de Pedidos
+-------------------------
+
++------+-----------------------------------------------+-------------------------------+-------------------------+---------------------------+--------+
+| Método| Endpoint                                      | Descripción                   | Request                 | Response                  | Status |
++------+-----------------------------------------------+-------------------------------+-------------------------+---------------------------+--------+
+| GET   | /api/v1/orders/                               | Pedidos del usuario actual    | Query: page, per_page,   | PaginatedResp[Order]      | 200    |
+| GET   | /api/v1/orders/{order_id}                     | Detalle completo del pedido   | Path: order_id           | OrderDetailResponse       | 200    |
+| POST  | /api/v1/orders/                               | Crear nuevo pedido            | OrderCreate             | OrderResponse             | 201    |
+| PATCH | /api/v1/orders/{order_id}/cancel              | Cancelar pedido               | CancelRequest           | OrderResponse             | 200    |
+| PATCH | /api/v1/orders/{order_id}/status              | Actualizar estado             | StatusUpdate            | OrderResponse             | 200    |
+| GET   | /api/v1/orders/{order_id}/tracking            | Tracking en tiempo real       | N/A                     | TrackingResponse          | 200    |
++------+-----------------------------------------------+-------------------------------+-------------------------+---------------------------+--------+
+
+Tabla 12: Endpoints del módulo de pedidos
+
+
+7.6 Endpoints de Pagos
+-----------------------
+
++------+------------------------------------------------+-------------------------------+-------------------------+-----------------------+--------+
+| Método| Endpoint                                       | Descripción                   | Request                 | Response              | Status |
++------+------------------------------------------------+-------------------------------+-------------------------+-----------------------+--------+
+| POST  | /api/v1/payments/create-intent                 | Crear intento de pago Stripe  | PaymentIntentRequest    | PaymentIntentResp.    | 200    |
+| POST  | /api/v1/payments/confirm                       | Confirmar pago                | PaymentConfirmRequest   | PaymentResponse       | 200    |
+| GET   | /api/v1/payments/{payment_id}                  | Detalle del pago              | N/A                     | PaymentResponse       | 200    |
+| POST  | /api/v1/payments/{payment_id}/refund           | Solicitar reembolso           | RefundRequest           | PaymentResponse       | 200    |
+| GET   | /api/v1/payments/history                       | Historial de pagos            | Query: page, per_page   | PaginatedResp[Payment] | 200    |
++------+------------------------------------------------+-------------------------------+-------------------------+-----------------------+--------+
+
+Tabla 13: Endpoints del módulo de pagos
+
+
+7.7 Endpoints de Reseñas
+-------------------------
+
++------+------------------------------------------------------+-----------------------------------+-------------------------+------------------------+--------+
+| Método| Endpoint                                             | Descripción                       | Request                 | Response               | Status |
++------+------------------------------------------------------+-----------------------------------+-------------------------+------------------------+--------+
+| POST  | /api/v1/reviews/                                     | Crear reseña                     | ReviewCreate            | ReviewResponse         | 201    |
+| GET   | /api/v1/restaurants/{rest_id}/reviews                | Reseñas de restaurante           | Query: page, per_page   | PaginatedResp[Review]  | 200    |
+| PATCH | /api/v1/reviews/{review_id}                          | Editar reseña propia             | ReviewUpdate            | ReviewResponse         | 200    |
+| DELETE| /api/v1/reviews/{review_id}                          | Eliminar reseña propia           | N/A                     | MessageResp.           | 204    |
++------+------------------------------------------------------+-----------------------------------+-------------------------+------------------------+--------+
+
+Tabla 14: Endpoints del módulo de reseñas
+
+
+================================================================================
+8. AUTENTICACIÓN Y AUTORIZACIÓN
+================================================================================
+
+8.1 Estrategia de Autenticación con JWT
+----------------------------------------
+
+La autenticación se implementa mediante JSON Web Tokens (JWT) siguiendo el
+flujo OAuth2 con Password Bearer. El proceso comienza cuando el cliente envía
+sus credenciales (email y contraseña) al endpoint /auth/login. El servidor
+verifica las credenciales contra la base de datos (comparando el hash bcrypt),
+y si son válidas, genera un par de tokens: un access_token de corta duración
+(15-30 minutos) utilizado para autenticar cada petición, y un refresh_token de
+larga duración (7 días) utilizado exclusivamente para obtener nuevos
+access_tokens sin requerir reautenticación.
+
+El access_token se codifica como JWT con un payload que incluye el user_id
+(sub), el rol del usuario (role), el email y los timestamps de emisión (iat) y
+expiración (exp). Se firma con el algoritmo HS256 utilizando una SECRET_KEY
+almacenada como variable de entorno. El refresh_token sigue la misma
+estructura pero con una expiración mayor. Ambos tokens se almacenan de manera
+segura: el access_token en memoria del cliente (o localStorage con protección
+XSS), y el refresh_token como cookie HTTP-only segura. Adicionalmente, los
+tokens invalidados se agregan a una blacklist almacenada en Redis con un TTL
+igual a su tiempo de expiración restante.
+
+Ejemplo de implementación (app/core/security.py):
+
+    from datetime import datetime, timedelta, timezone
+    from jose import jwt, JWTError
+    from app.core.config import settings
+
+    def create_access_token(data: dict) -> str:
+        to_encode = data.copy()
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        to_encode.update({"exp": expire, "type": "access"})
+        return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+    def create_refresh_token(data: dict) -> str:
+        to_encode = data.copy()
+        expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        to_encode.update({"exp": expire, "type": "refresh"})
+        return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+    def decode_token(token: str) -> dict:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+
+Dependencia de autenticación (app/api/deps.py):
+
+    from fastapi import Depends, HTTPException, status
+    from fastapi.security import OAuth2PasswordBearer
+    from jose import JWTError
+    from app.core.security import decode_token
+    from app.repositories.user_repo import UserRepository
+
+    oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+    async def get_current_user(
+        token: str = Depends(oauth2_scheme),
+        db: AsyncSession = Depends(get_db)
+    ) -> User:
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No se pudieron validar las credenciales",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+        try:
+            payload = decode_token(token)
+            if payload.get("type") != "access":
+                raise credentials_exception
+            user_id: str = payload.get("sub")
+            if user_id is None:
+                raise credentials_exception
+        except JWTError:
+            raise credentials_exception
+
+        # Verificar blacklist en Redis
+        if await redis_client.get(f"blacklist:{token}"):
+            raise credentials_exception
+
+        user = await user_repo.get_by_id(db, UUID(user_id))
+        if user is None or not user.is_active:
+            raise credentials_exception
+        return user
+
+
+8.2 Sistema de Roles y Permisos (RBAC)
+---------------------------------------
+
+El sistema implementa Role-Based Access Control (RBAC) con cuatro roles
+principales, cada uno con permisos específicos definidos a nivel de endpoint:
+
+  ADMIN: Acceso total a todos los recursos del sistema, gestión de usuarios,
+         restaurantes, configuración global y analíticas.
+
+  RESTAURANT: Gestión de su propio restaurante: menú, categorías, platos,
+             aceptar/rechazar pedidos y actualizar estados de preparación.
+
+  RIDER: Ver y aceptar asignaciones de entregas, actualizar el estado del
+         envío (en camino, entregado) y reportar incidencias.
+
+  CLIENT: Registrarse, buscar restaurantes, realizar pedidos, pagos, dar
+          reseñas y gestionar su perfil y direcciones.
+
+Dependencia de autorización por roles:
+
+    from functools import wraps
+
+    def require_role(roles: list[str]):
+        async def role_checker(current_user: User = Depends(get_current_user)):
+            if current_user.role not in roles:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Se requiere uno de estos roles: {', '.join(roles)}"
+                )
+            return current_user
+        return role_checker
+
+    # Uso en endpoints:
+    @router.delete("/users/{user_id}")
+    async def delete_user(
+        user_id: UUID,
+        admin: User = Depends(require_role(["ADMIN"])),
+        db: AsyncSession = Depends(get_db)
+    ):
+        ...
+
+
+8.3 Políticas de Seguridad
+----------------------------
+
+  • Todas las contraseñas se almacenan como hashes bcrypt con un costo de work
+    factor de 12 rounds, nunca en texto plano.
+
+  • Los tokens JWT se firman con HS256 y tienen una expiración definida. Se
+    utiliza una SECRET_KEY de al menos 256 bits generada aleatoriamente.
+
+  • El refresh_token se almacena como cookie HTTP-only, Secure (solo HTTPS),
+    SameSite=Strict para prevenir CSRF.
+
+  • Se implementa rate limiting en endpoints sensibles: 5 intentos de login por
+    minuto por IP, 100 requests por minuto por usuario general.
+
+  • Los headers de seguridad HTTP incluyen: X-Content-Type-Options: nosniff,
+    X-Frame-Options: DENY, X-XSS-Protection: 1; mode=block,
+    Strict-Transport-Security.
+
+  • Todas las comunicaciones se realizan exclusivamente sobre HTTPS en
+    producción.
+
+  • Se valida la entrada de todos los campos de texto para prevenir inyección
+    SQL (mitigada por SQLAlchemy ORM), XSS (sanitización de HTML en
+    comentarios) y command injection.
+
+  • Se implementan CORS restrictivos, permitiendo únicamente los dominios
+    autorizados del frontend en producción.
+
+
+================================================================================
+9. LÓGICA DE NEGOCIO (CAPA DE SERVICIOS)
+================================================================================
+
+9.1 Servicio de Autenticación (AuthService)
+-------------------------------------------
+
+El AuthService encapsula toda la lógica de autenticación y gestión de sesiones.
+Sus responsabilidades principales incluyen: registro de nuevos usuarios con
+validación de unicidad de email y teléfono, hash seguro de contraseñas con
+bcrypt, autenticación y generación del par JWT (access + refresh), verificación
+de email mediante envío de token temporal, procesamiento de solicitud de
+reseteo de contraseña con token temporal de 30 minutos de validez,
+invalidación de tokens mediante blacklist en Redis, y actualización de
+credenciales con validación de contraseña actual. Cada método del servicio
+maneja errores de negocio específicos (usuario ya existe, credenciales
+inválidas, token expirado) lanzando excepciones custom que son capturadas por
+los handlers globales de la API.
+
+Ejemplo de implementación:
+
+    class AuthService:
+        def __init__(self, user_repo: UserRepository):
+            self.user_repo = user_repo
+
+        async def register(self, db: AsyncSession, user_data: UserCreate) -> User:
+            # Verificar unicidad
+            if await self.user_repo.get_by_email(db, user_data.email):
+                raise AlreadyExistsException("El email ya está registrado")
+            if await self.user_repo.get_by_phone(db, user_data.phone):
+                raise AlreadyExistsException("El teléfono ya está registrado")
+
+            # Hash password
+            hashed_password = get_password_hash(user_data.password)
+
+            # Crear usuario
+            user = User(
+                email=user_data.email,
+                full_name=user_data.full_name,
+                phone=user_data.phone,
+                hashed_password=hashed_password,
+                role=user_data.role
+            )
+            return await self.user_repo.create(db, user)
+
+        async def authenticate(self, db: AsyncSession, email: str, password: str) -> TokenResponse:
+            user = await self.user_repo.get_by_email(db, email)
+            if not user or not verify_password(password, user.hashed_password):
+                raise UnauthorizedException("Credenciales inválidas")
+            if not user.is_active:
+                raise UnauthorizedException("Usuario inactivo")
+
+            token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
+            return TokenResponse(
+                access_token=create_access_token(token_data),
+                refresh_token=create_refresh_token(token_data),
+                token_type="bearer",
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            )
+
+
+9.2 Servicio de Órdenes (OrderService)
+----------------------------------------
+
+El OrderService es el componente más crítico de la lógica de negocio,
+orquestando el flujo completo del ciclo de vida de un pedido. La creación de un
+pedido implica las siguientes validaciones y operaciones atómicas:
+
+  1. Verificar que todos los menu_items pertenezcan al mismo restaurante.
+  2. Verificar que todos los items estén disponibles (is_available=True).
+  3. Calcular el subtotal sumando (precio_unitario * cantidad) de cada item.
+  4. Aplicar impuestos configurables por ubicación (por defecto 16% IVA).
+  5. Agregar la tarifa de envío del restaurante.
+  6. Verificar que el monto total alcance el mínimo de pedido si aplica.
+  7. Verificar que la dirección de entrega esté dentro del radio de cobertura.
+  8. Crear el registro Order con estado PENDING.
+  9. Crear los registros OrderItem correspondientes.
+  10. Emitir un evento de dominio para notificación al restaurante.
+
+Máquina de estados del pedido (transiciones válidas):
+
+  PENDING -> CONFIRMED (restaurante acepta)
+  PENDING -> CANCELLED (cliente cancela o timeout)
+  CONFIRMED -> PREPARING
+  PREPARING -> READY_FOR_PICKUP
+  READY_FOR_PICKUP -> IN_TRANSIT (repartidor recoge)
+  READY_FOR_PICKUP -> CANCELLED (restaurante cancela)
+  IN_TRANSIT -> DELIVERED
+  DELIVERED -> REFUNDED (si hay reclamo dentro de 24h)
+
+Cada transición actualiza el timestamp correspondiente y registra el evento
+para auditoría.
+
+
+9.3 Servicio de Pagos (PaymentService)
+----------------------------------------
+
+El PaymentService gestiona la integración con la pasarela de pagos Stripe y el
+procesamiento de transacciones. Para crear un pago, el servicio genera un
+PaymentIntent en Stripe con el monto total del pedido y la moneda
+configurada, retorna el client_secret al frontend para que el cliente complete
+el pago de manera segura. Una vez confirmado el pago por Stripe (mediante
+webhook), el servicio actualiza el estado del Payment a COMPLETED, cambia el
+estado del Order a CONFIRMED (notificando al restaurante), y envía
+confirmaciones por email al cliente. Para reembolsos, se procesa un refund
+parcial o total a través de la API de Stripe y se actualiza el estado del
+pago y del pedido correspondiente.
+
+Webhook de Stripe (app/api/v1/payments.py):
+
+    @router.post("/webhook")
+    async def stripe_webhook(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        payment_service: PaymentService = Depends(get_payment_service)
+    ):
+        payload = await request.body()
+        sig_header = request.headers.get("stripe-signature")
+
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except stripe.error.SignatureVerificationError:
+            raise HTTPException(status_code=400, detail="Firma inválida")
+
+        if event["type"] == "payment_intent.succeeded":
+            await payment_service.handle_payment_success(db, event["data"]["object"])
+        elif event["type"] == "payment_intent.payment_failed":
+            await payment_service.handle_payment_failure(db, event["data"]["object"])
+
+        return {"received": True}
+
+
+9.4 Servicio de Entregas (DeliveryService)
+-------------------------------------------
+
+El DeliveryService gestiona la asignación de repartidores y el seguimiento de
+entregas en tiempo real. La asignación de repartidores utiliza un algoritmo
+que considera: proximidad geográfica del repartidor al restaurante, rating
+promedio del repartidor, capacidad de pedidos simultáneos (máximo 3), y
+disponibilidad actual. Una vez asignado, el repartidor recibe notificaciones
+push con los detalles del pedido y puede actualizar el estado de la entrega a
+través de la API.
+
+El seguimiento GPS del repartidor se implementa mediante WebSocket, donde el
+repartidor envía actualizaciones de posición cada 5 segundos y los clientes
+suscritos al pedido reciben las actualizaciones en tiempo real para
+visualizar el progreso en un mapa.
+
+WebSocket implementation:
+
+    @router.websocket("/ws/orders/{order_id}/tracking")
+    async def order_tracking_ws(websocket: WebSocket, order_id: str):
+        await websocket.accept()
+        token = websocket.query_params.get("token")
+        user = await verify_ws_token(token)
+
+        pubsub = redis_client.pubsub()
+        channel = f"tracking:{order_id}"
+        await pubsub.subscribe(channel)
+
+        try:
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True)
+                if message:
+                    await websocket.send_json(message["data"])
+        except WebSocketDisconnect:
+            await pubsub.unsubscribe(channel)
+
+
+================================================================================
+10. MANEJO DE ERRORES Y EXCEPCIONES
+================================================================================
+
+10.1 Jerarquía de Excepciones Custom
+--------------------------------------
+
+Se implementa una jerarquía de excepciones custom que hereda de HTTPException
+de FastAPI, permitiendo un manejo granular y consistente de errores en toda la
+aplicación. La clase base AppException incluye campos para status_code, detail
+(mensaje legible), error_code (código interno para el frontend) y metadata
+(información adicional para debugging). Excepciones definidas:
+
+  • NotFoundException (404): Recurso no encontrado
+  • AlreadyExistsException (409): Recurso duplicado
+  • UnauthorizedException (401): No autenticado
+  • ForbiddenException (403): Sin permisos suficientes
+  • ValidationException (422): Error de validación de datos
+  • BusinessRuleException (400): Violación de regla de negocio
+  • RateLimitException (429): Demasiadas peticiones
+  • ExternalServiceException (502): Fallo en servicio externo
+
+    class AppException(HTTPException):
+        def __init__(self, status_code: int, detail: str, error_code: str, metadata: dict = None):
+            self.error_code = error_code
+            self.metadata = metadata or {}
+            super().__init__(status_code=status_code, detail=detail)
+
+    class NotFoundException(AppException):
+        def __init__(self, resource: str, resource_id: str):
+            super().__init__(
+                status_code=404,
+                detail=f"{resource} con id '{resource_id}' no encontrado",
+                error_code=f"{resource.upper()}_NOT_FOUND"
+            )
+
+
+10.2 Response Schema de Errores
+---------------------------------
+
+Todas las respuestas de error siguen un formato JSON consistente:
+
+    {
+      "status": 404,
+      "error": "USER_NOT_FOUND",
+      "message": "Usuario con id 'xxx' no encontrado",
+      "details": [
+        {"field": "user_id", "message": "No existe un usuario con este ID"}
+      ],
+      "timestamp": "2024-03-15T14:30:00Z",
+      "request_id": "550e8400-e29b-41d4-a716-446655440000"
+    }
+
+Este formato permite que el frontend muestre mensajes informativos al usuario y
+que el equipo de soporte pueda rastrear problemas mediante el request_id.
+
+
+10.3 Handlers Globales de Excepciones
+---------------------------------------
+
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+
+    async def app_exception_handler(request: Request, exc: AppException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": exc.status_code,
+                "error": exc.error_code,
+                "message": exc.detail,
+                "details": exc.metadata.get("details", []),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": request.state.request_id
+            }
+        )
+
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        details = [
+            {"field": err["loc"][-1], "message": err["msg"]}
+            for err in exc.errors()
+        ]
+        return JSONResponse(
+            status_code=422,
+            content={
+                "status": 422,
+                "error": "VALIDATION_ERROR",
+                "message": "Error de validación en los datos enviados",
+                "details": details,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": request.state.request_id
+            }
+        )
+
+    async def global_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled error: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": 500,
+                "error": "INTERNAL_SERVER_ERROR",
+                "message": "Error interno del servidor",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": request.state.request_id
+            }
+        )
+
+
+================================================================================
+11. MIDDLEWARE Y MONITOREO
+================================================================================
+
+11.1 Middleware de Logging Estructurado
+-----------------------------------------
+
+Se implementa un middleware de logging utilizando structlog que captura
+información detallada de cada petición HTTP entrante y saliente. Para cada
+request se registran: timestamp, método HTTP, path, query parameters, IP del
+cliente, User-Agent, ID de usuario autenticado (si aplica), y un request_id
+único generado con UUID4. Para cada response se registran: status code, tiempo
+de procesamiento total (en milisegundos), tamaño del body de respuesta, y
+cualquier excepción capturada. El formato de salida es JSON estructurado,
+compatible con sistemas como ELK Stack, Datadog o Grafana Loki.
+
+    import structlog
+    import uuid
+    import time
+
+    logger = structlog.get_logger()
+
+    class RequestLoggingMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            request_id = str(uuid.uuid4())
+            request.state.request_id = request_id
+
+            start_time = time.perf_counter()
+            structlog.contextvars.bind_contextvars(request_id=request_id)
+
+            logger.info(
+                "request_started",
+                method=request.method,
+                path=request.url.path,
+                client_ip=request.client.host
+            )
+
+            response = await call_next(request)
+
+            process_time = (time.perf_counter() - start_time) * 1000
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-Response-Time"] = f"{process_time:.2f}ms"
+
+            logger.info(
+                "request_completed",
+                status_code=response.status_code,
+                process_time_ms=process_time
+            )
+
+            return response
+
+
+11.2 Middleware de CORS
+-------------------------
+
+El middleware CORS se configura de manera restrictiva. En desarrollo se
+permite localhost en los puertos 3000 y 5173. En producción se permiten
+únicamente los dominios del frontend desplegado. Se configuran los headers
+permitidos (Authorization, Content-Type, X-Request-ID), los métodos HTTP
+permitidos (GET, POST, PUT, PATCH, DELETE, OPTIONS), y se habilita
+allow_credentials=True para el envío de cookies de refresh_token.
+
+
+11.3 Middleware de Rate Limiting
+----------------------------------
+
+Se implementa rate limiting utilizando Redis como backend. Algoritmo de ventana
+deslizante (sliding window):
+
+  • Endpoints de auth (login, registro): 5 peticiones/minuto por IP
+  • Endpoints generales: 100 peticiones/minuto por usuario
+  • Endpoints de búsqueda: 60 peticiones/minuto
+  • Endpoints de admin: 30 peticiones/minuto
+
+Cuando se excede el límite, se retorna HTTP 429 con header Retry-After.
+
+    import redis
+    import time
+
+    async def check_rate_limit(
+        key: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> bool:
+        now = time.time()
+        window_start = now - window_seconds
+        pipe = redis_client.pipeline()
+        pipe.zremrangebyscore(key, 0, window_start)
+        pipe.zadd(key, {str(now): now})
+        pipe.zcard(key)
+        pipe.expire(key, window_seconds)
+        results = await pipe.execute()
+        return results[2] <= max_requests
+
+
+11.4 Middleware de Timing y Health Checks
+------------------------------------------
+
+Se implementa un endpoint de health check (GET /health) que retorna el estado
+de todos los servicios dependientes: conexión a PostgreSQL (con latencia),
+conexión a Redis (con latencia) y estado del servidor. Este endpoint es
+utilizado por load balancers y orquestadores como readiness probe y liveness
+probe. Se agrega el header X-Response-Time a todas las respuestas con el
+tiempo total de procesamiento en milisegundos.
+
+    @app.get("/health", tags=["Health"])
+    async def health_check():
+        checks = {}
+        # Check PostgreSQL
+        start = time.perf_counter()
+        await db.execute(text("SELECT 1"))
+        checks["postgresql"] = {"status": "ok", "latency_ms": round((time.perf_counter() - start) * 1000)}
+        # Check Redis
+        start = time.perf_counter()
+        await redis_client.ping()
+        checks["redis"] = {"status": "ok", "latency_ms": round((time.perf_counter() - start) * 1000)}
+        return {"status": "healthy", "checks": checks, "version": settings.APP_VERSION}
+
+
+================================================================================
+12. ESTRATEGIA DE TESTING
+================================================================================
+
+12.1 Pirámide de Testing
+--------------------------
+
+La estrategia de testing sigue el modelo de pirámide de testing, donde la base
+amplia son tests unitarios rápidos, la capa intermedia son tests de integración
+que prueban la interacción entre componentes, y la punta son tests end-to-end
+que validan flujos completos del sistema. La distribución objetivo es
+aproximadamente 70% unitarios, 20% de integración y 10% end-to-end.
+
+Todos los tests se ejecutan de manera asíncrona con pytest-asyncio, utilizando
+una base de datos PostgreSQL de prueba aislada y fixtures reutilizables.
+
+Configuración pytest (conftest.py):
+
+    import pytest
+    import pytest_asyncio
+    from httpx import AsyncClient, ASGITransport
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+    TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost:5433/test_db"
+
+    test_engine = create_async_engine(TEST_DATABASE_URL)
+    TestSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    @pytest_asyncio.fixture
+    async def db_session():
+        async with TestSessionLocal() as session:
+            async with session.begin():
+                yield session
+            await session.rollback()
+
+    @pytest_asyncio.fixture
+    async def client(db_session):
+        app.dependency_overrides[get_db] = lambda: db_session
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+        app.dependency_overrides.clear()
+
+
+12.2 Tests Unitarios
+----------------------
+
+Los tests unitarios se enfocan en probar cada componente de manera aislada
+utilizando mocks para las dependencias externas:
+
+  • Esquemas Pydantic: Validación de entrada y serialización de salida,
+    incluyendo casos edge (campos vacíos, tipos incorrectos, valores fuera de
+    rango).
+  • Servicios: AuthService con mocks de repositorio y hashing, OrderService
+    con verificación de reglas de negocio, PaymentService con mock de Stripe.
+  • Repositorios: Queries de CRUD con fixtures de base de datos.
+  • Funciones de utilidad: Cálculo de distancias, formateo de moneda,
+    generación de números de pedido.
+
+Ejemplo de test unitario:
+
+    @pytest.mark.asyncio
+    async def test_register_user_success():
+        user_repo = Mock(UserRepository)
+        user_repo.get_by_email.return_value = None
+        user_repo.get_by_phone.return_value = None
+        user_repo.create.return_value = User(id=UUID("..."), email="test@test.com", ...)
+
+        auth_service = AuthService(user_repo)
+        user_data = UserCreate(email="test@test.com", full_name="Test", phone="1234567890", password="Pass123!")
+
+        result = await auth_service.register(db_session, user_data)
+
+        assert result.email == "test@test.com"
+        user_repo.create.assert_called_once()
+
+
+12.3 Tests de Integración
+---------------------------
+
+Los tests de integración prueban la interacción entre múltiples componentes
+utilizando una base de datos PostgreSQL real de prueba. Se utilizan sesiones
+transaccionales que se revierten automáticamente después de cada test:
+
+  • Creación de un pedido completo (autenticación, selección de items, creación
+    de orden, procesamiento de pago).
+  • Flujo de estados de un pedido (PENDING -> DELIVERED).
+  • Verificación de permisos RBAC (cada rol solo puede acceder a sus
+    endpoints).
+  • Operaciones CRUD completas de cada módulo.
+  • Conexión con Redis para sesiones y caching.
+
+Ejemplo:
+
+    @pytest.mark.asyncio
+    async def test_create_order_full_flow(client, db_session):
+        # 1. Register and login user
+        response = await client.post("/api/v1/auth/register", json={...})
+        assert response.status_code == 201
+
+        response = await client.post("/api/v1/auth/login", data={...})
+        token = response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Create order
+        order_data = {
+            "restaurant_id": str(restaurant.id),
+            "items": [{"menu_item_id": str(item.id), "quantity": 2}],
+            "delivery_address_id": str(address.id),
+            "payment_method": "CARD"
+        }
+        response = await client.post("/api/v1/orders/", json=order_data, headers=headers)
+        assert response.status_code == 201
+        assert response.json()["status"] == "pending"
+
+
+12.4 Tests End-to-End (E2E)
+------------------------------
+
+Los tests E2E validan flujos completos del sistema desde la perspectiva del
+usuario final, utilizando httpx.AsyncClient. Flujos críticos:
+
+  • Registro de cliente -> Búsqueda de restaurantes -> Selección de platos ->
+    Creación de pedido -> Pago -> Asignación de repartidor -> Seguimiento ->
+    Entrega -> Calificación.
+
+  • Cada flujo prueba la integración de múltiples endpoints, verifica la
+    consistencia de datos entre BD y respuestas de la API.
+
+  Estos tests se ejecutan en CI/CD con una instancia completa del sistema
+  levantada mediante Docker Compose.
+
+
+================================================================================
+13. MIGRACIONES DE BASE DE DATOS CON ALEMBIC
+================================================================================
+
+13.1 Configuración de Alembic
+-------------------------------
+
+Alembic se configura como sistema de gestión de migraciones versionadas. La
+configuración incluye la conexión a la base de datos (leída desde variables
+de entorno), el directorio de versiones (alembic/versions/), y la referencia
+a los modelos SQLAlchemy para autogeneración.
+
+Configuración (alembic/env.py):
+
+    from logging.config import fileConfig
+    from sqlalchemy import engine_from_config, pool
+    from alembic import context
+    from app.core.config import settings
+    from app.core.database import Base
+    # Importar todos los modelos para autogenerate
+    from app.models import user, restaurant, order, payment, review, address
+
+    config = context.config
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+    if config.config_file_name is not None:
+        fileConfig(config.config_file_name)
+
+    target_metadata = Base.metadata
+
+    def run_migrations_offline() -> None:
+        url = config.get_main_option("sqlalchemy.url")
+        context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+        with context.begin_transaction():
+            context.run_migrations()
+
+    def run_migrations_online() -> None:
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
+        with connectable.connect() as connection:
+            context.configure(connection=connection, target_metadata=target_metadata)
+            with context.begin_transaction():
+                context.run_migrations()
+
+    if context.is_offline_mode():
+        run_migrations_offline()
+    else:
+        run_migrations_online()
+
+
+13.2 Estrategia de Migraciones
+--------------------------------
+
+  • Generar migraciones automáticas con:
+    alembic revision --autogenerate -m "descripción"
+
+  • Revisar SIEMPRE el código autogenerado antes de aplicarlo.
+
+  • Crear migraciones manuales para operaciones complejas no detectadas
+    automáticamente (datos por defecto, transformaciones de datos).
+
+  • Probar migraciones contra una copia de la BD de producción antes de
+    desplegar.
+
+  • Mantener script de rollback (downgrade) para cada migración.
+
+  • Utilizar transacciones DDL para atomicidad: si falla, se revierte
+    completamente.
+
+  • Implementar migraciones de datos (data migrations) por separado de las
+    migraciones de esquema.
+
+Comandos útiles:
+  alembic upgrade head          # Aplicar todas las migraciones pendientes
+  alembic downgrade -1          # Revertir última migración
+  alembic current               # Mostrar migración actual
+  alembic history               # Historial de migraciones
+  alembic revision -m "create orders table"  # Crear migración manual
+
+
+================================================================================
+14. DOCUMENTACIÓN DE LA API
+================================================================================
+
+14.1 OpenAPI 3.1 Automático
+------------------------------
+
+FastAPI genera automáticamente la documentación OpenAPI basada en los type
+hints, esquemas Pydantic y configuraciones de los endpoints. Se configuran
+los metadatos del servicio (título, descripción, versión, contacto, licencia)
+directamente en la instancia de la aplicación. Cada endpoint incluye su
+descripción detallada, parámetros esperados, esquemas request/response con
+ejemplos, códigos de estado y requisitos de autenticación.
+
+La documentación está disponible en:
+  • Swagger UI interactivo: http://localhost:8000/docs
+  • ReDoc (vista limpia): http://localhost:8000/redoc
+  • JSON spec: http://localhost:8000/openapi.json
+
+
+14.2 Documentación con Markdown
+---------------------------------
+
+Además de la documentación OpenAPI automática, se debe mantener documentación
+en Markdown en /docs:
+
+  • Quickstart: Instrucciones paso a paso para levantar el proyecto localmente
+  • Arquitectura: Explicación de patrones de diseño utilizados
+  • Módulos: Descripción detallada de cada endpoint
+  • Contribución: Guías para desarrolladores nuevos
+  • Versionamiento: Política de semantic versioning de la API
+  • Ejemplos: Integración con curl, Python, JavaScript
+  • Changelog: Historial de cambios por versión
+
+Estructura de la documentación:
+
+  docs/
+  ├── getting-started.md     # Quickstart y requisitos previos
+  ├── architecture.md        # Arquitectura y patrones de diseño
+  ├── api-reference/
+  │   ├── auth.md            # Documentación del módulo de auth
+  │   ├── users.md           # Documentación del módulo de usuarios
+  │   ├── restaurants.md     # Documentación del módulo de restaurantes
+  │   ├── orders.md          # Documentación del módulo de pedidos
+  │   ├── payments.md        # Documentación del módulo de pagos
+  │   └── reviews.md         # Documentación del módulo de reseñas
+  ├── deployment.md          # Guía de despliegue
+  ├── contributing.md        # Guía de contribución
+  └── changelog.md           # Historial de cambios
+
+
+================================================================================
+15. DESPLIEGUE Y DEVOPS
+================================================================================
+
+15.1 Containerización con Docker
+----------------------------------
+
+El despliegue se realiza mediante contenedores Docker. Se definen tres
+Dockerfiles: aplicación FastAPI (multi-stage), worker de Celery, y
+dashboard de monitoreo opcional (Flower).
+
+Dockerfile (multi-stage):
+
+    # Build stage
+    FROM python:3.11-slim AS builder
+    WORKDIR /app
+    COPY pyproject.toml ./
+    RUN pip install --no-cache-dir .
+
+    # Production stage
+    FROM python:3.11-slim
+    WORKDIR /app
+    COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+    COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+    COPY ./app ./app
+    COPY ./alembic ./alembic
+    COPY ./alembic.ini ./
+    EXPOSE 8000
+    CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+docker-compose.yml:
+
+    version: "3.9"
+    services:
+      api:
+        build: .
+        ports: ["8000:8000"]
+        env_file: .env
+        depends_on: [postgres, redis]
+        restart: unless-stopped
+
+      celery-worker:
+        build: .
+        command: celery -A app.tasks worker -l info
+        env_file: .env
+        depends_on: [redis, postgres]
+        restart: unless-stopped
+
+      postgres:
+        image: postgres:15-alpine
+        environment:
+          POSTGRES_DB: fooddelivery
+          POSTGRES_USER: fooddelivery
+          POSTGRES_PASSWORD: fooddelivery
+        volumes: [postgres_data:/var/lib/postgresql/data]
+        ports: ["5432:5432"]
+
+      redis:
+        image: redis:7-alpine
+        volumes: [redis_data:/data]
+        ports: ["6379:6379"]
+
+    volumes:
+      postgres_data:
+      redis_data:
+
+
+15.2 CI/CD con GitHub Actions
+-------------------------------
+
+El pipeline de CI/CD se ejecuta en cada push y pull request:
+
+  1. Linting con Ruff (< 30s)
+  2. Type checking con Mypy
+  3. Unit tests con pytest y coverage (objetivo mínimo 80%)
+  4. Integration tests (con docker-compose)
+  5. Build de imagen Docker
+  6. Deploy (push al registry, despliegue con aprobación manual para prod)
+
+Workflow (.github/workflows/ci.yml):
+
+    name: CI/CD Pipeline
+    on:
+      push:
+        branches: [main, develop]
+      pull_request:
+        branches: [main]
+
+    jobs:
+      lint:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with: {python-version: "3.11"}
+          - run: pip install ruff
+          - run: ruff check app/
+
+      test:
+        runs-on: ubuntu-latest
+        services:
+          postgres:
+            image: postgres:15
+            env: {POSTGRES_DB: test_db, POSTGRES_USER: test, POSTGRES_PASSWORD: test}
+            ports: ["5432:5432"]
+          redis:
+            image: redis:7
+            ports: ["6379:6379"]
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with: {python-version: "3.11"}
+          - run: pip install -e ".[dev]"
+          - run: pytest tests/ --cov=app --cov-report=xml --cov-fail-under=80
+
+      build:
+        needs: [lint, test]
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: docker/build-push-action@v5
+            with:
+              push: true
+              tags: ${{ secrets.DOCKER_REGISTRY }}/fooddelivery:${{ github.sha }}
+
+
+15.3 Monitoreo y Observabilidad
+----------------------------------
+
+  • Health checks en /health para readiness y liveness probes.
+  • Logging estructurado en JSON con structlog, enviado a ELK Stack, Datadog
+    o CloudWatch.
+  • Métricas de rendimiento expuestas en /metrics en formato Prometheus
+    (requests, latencia P95, tasa de errores).
+  • Alertas automáticas: tasa de errores > 5%, latencia P95 > 500ms.
+  • Dashboard con Grafana (pedidos/min, tiempo promedio de entrega, tasa de
+    pagos exitosos).
+  • Tracing distribuido con OpenTelemetry.
+  • Backups automáticos diarios de PostgreSQL con retención de 30 días.
+
+
+================================================================================
+16. BUENAS PRÁCTICAS ADICIONALES
+================================================================================
+
+16.1 Caching con Redis
+------------------------
+
+Estrategia de caching multi-nivel con Redis:
+
+  • Cache de lectura frecuente: Listados de restaurantes, menús populares,
+    categorías. TTL de 5-15 minutos. Invalidación al actualizar datos.
+
+  • Cache de sesiones: Datos del usuario autenticado, carrito temporal.
+    TTL de 30 minutos.
+
+  • Cache de rate limiting: Contadores de peticiones. TTL automático según la
+    ventana configurada.
+
+Patrón cache-aside: buscar en Redis primero, consultar PostgreSQL en caso de
+miss, almacenar resultado en cache.
+
+    async def get_restaurant_cached(rest_id: UUID, db: AsyncSession) -> Restaurant:
+        cache_key = f"restaurant:{rest_id}"
+        cached = await redis_client.get(cache_key)
+        if cached:
+            return Restaurant.parse_raw(cached)
+
+        restaurant = await restaurant_repo.get_by_id(db, rest_id)
+        if restaurant:
+            await redis_client.setex(cache_key, 300, restaurant.json())
+        return restaurant
+
+
+16.2 Tareas en Segundo Plano
+------------------------------
+
+Operaciones delegadas a Celery con Redis como broker:
+
+  • Envío de emails (verificación, confirmación de pedido, recibos).
+  • Actualización de rating promedio de restaurantes.
+  • Limpieza de datos temporales (carritos abandonados, sesiones expiradas).
+  • Generación de reportes diarios.
+  • Sincronización con servicios externos.
+
+Configuración de Celery:
+
+    from celery import Celery
+    from app.core.config import settings
+
+    celery_app = Celery("fooddelivery", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
+    celery_app.conf.update(
+        task_serializer="json",
+        accept_content=["json"],
+        result_serializer="json",
+        timezone="UTC",
+        enable_utc=True,
+        task_track_started=True,
+        task_acks_late=True,
+        worker_prefetch_multiplier=1,
+    )
+
+    @celery_app.task(bind=True, max_retries=3)
+    async def send_order_confirmation_email(self, order_id: str):
+        try:
+            order = await get_order(order_id)
+            await email_service.send_order_confirmation(order.user.email, order)
+        except Exception as exc:
+            raise self.retry(exc=exc, countdown=60)
+
+
+16.3 WebSockets para Tiempo Real
+-----------------------------------
+
+Implementación de WebSockets para tracking de entregas y notificaciones de
+estado de pedidos en tiempo real. Cuando un cliente se conecta al WebSocket
+/ws/orders/{order_id}/tracking, se validan permisos y se suscribe al canal
+Redis Pub/Sub del pedido. Las actualizaciones de GPS del repartidor se publican
+cada 5 segundos y se retransmiten a todos los clientes suscritos.
+
+
+16.4 Pagination, Filtering y Sorting
+---------------------------------------
+
+Todos los endpoints que retornan listas implementan:
+
+  • Paginación: query params (page, per_page)
+  • Filtros dinámicos: ?cuisine=mexicana&rating_min=4.0&is_open=true
+  • Ordenamiento: ?sort_by=rating_avg&sort_order=desc
+  • Búsqueda: ?search=pizza
+
+Retornan metadatos: total, page, per_page, total_pages.
+
+Implementación:
+
+    from fastapi import Query
+    from math import ceil
+
+    async def get_pagination_params(
+        page: int = Query(1, ge=1),
+        per_page: int = Query(20, ge=1, le=100)
+    ) -> dict:
+        return {"page": page, "per_page": per_page}
+
+    async def paginate(query, total_count: int, page: int, per_page: int) -> dict:
+        return {
+            "items": query,
+            "total": total_count,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": ceil(total_count / per_page)
+        }
+
+
+16.5 Internacionalización (i18n)
+-----------------------------------
+
+La API soporta internacionalización para mensajes de error y notificaciones en
+múltiples idiomas. Se implementa un sistema de archivos de traducciones (JSON)
+por locale (es, en, pt) con todas las cadenas de texto visibles para el
+usuario final. El idioma se detecta mediante el header Accept-Language o el
+idioma configurado en el perfil del usuario.
+
+Estructura de traducciones:
+
+  app/i18n/
+  ├── es.json    # Español
+  ├── en.json    # Inglés
+  └── pt.json    # Portugués
+
+Ejemplo (es.json):
+    {
+      "USER_NOT_FOUND": "Usuario con id '{id}' no encontrado",
+      "INVALID_CREDENTIALS": "Credenciales inválidas",
+      "ORDER_ALREADY_CANCELLED": "El pedido ya ha sido cancelado",
+      "PAYMENT_FAILED": "El pago no pudo ser procesado"
+    }
+
+
+================================================================================
+17. RESUMEN DEL PROMPT MAESTRO
+================================================================================
+
+17.1 Checklist de Implementación
+---------------------------------
+
+Este checklist resume los 19 pasos fundamentales para implementar el proyecto
+completo de la API REST para el sistema de entrega de alimentos con FastAPI:
+
+  1. Configurar proyecto con pyproject.toml, dependencias y estructura de
+     directorios según Clean Architecture.
+
+  2. Implementar modelo base abstracto (id UUID, timestamps) y modelos
+     SQLAlchemy para todas las entidades (User, Address, Restaurant, Category,
+     MenuItem, Order, OrderItem, Payment, Review).
+
+  3. Definir esquemas Pydantic separados por operación (Create, Update,
+     Response) para cada entidad.
+
+  4. Configurar conexión asíncrona a PostgreSQL con SQLAlchemy 2.0 y pooling
+     de conexiones.
+
+  5. Implementar AuthService con JWT, bcrypt, refresh tokens y blacklist en
+     Redis.
+
+  6. Crear dependencias inyectables (get_db, get_current_user, require_role)
+     en app/api/deps.py.
+
+  7. Implementar repositorios con métodos CRUD generales y queries específicas
+     por entidad.
+
+  8. Desarrollar OrderService con máquina de estados, validaciones de negocio
+     y cálculo de totales.
+
+  9. Desarrollar PaymentService con integración Stripe, webhooks y
+     procesamiento de reembolsos.
+
+  10. Implementar DeliveryService con algoritmo de asignación de repartidores
+      y seguimiento GPS.
+
+  11. Crear todos los endpoints RESTful con versionamiento /api/v1/,
+      documentación OpenAPI y validación.
+
+  12. Implementar excepciones custom, handlers globales y formato de error
+      consistente.
+
+  13. Configurar middleware de logging, CORS, rate limiting y health checks.
+
+  14. Implementar caching con Redis y tareas en segundo plano con Celery.
+
+  15. Configurar WebSockets para tracking de entregas en tiempo real.
+
+  16. Escribir tests unitarios, de integración y E2E con pytest y cobertura
+      mayor al 80%.
+
+  17. Configurar Alembic para migraciones de base de datos versionadas.
+
+  18. Containerizar con Docker (multi-stage) y crear docker-compose.yml
+      completo.
+
+  19. Configurar CI/CD con GitHub Actions (lint, type-check, test, build,
+      deploy).
+
+  20. Implementar monitoreo con logs estructurados, métricas Prometheus y
+      alertas.
+
+================================================================================
+                         FIN DEL DOCUMENTO
+================================================================================
